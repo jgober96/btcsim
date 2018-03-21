@@ -25,100 +25,118 @@ from heapq import *
 
 from btcsim import *
 
-class BadMiner(Miner):
-	chain_head_others = '*'
-	privateBranchLen = 0
-	
-	def add_block(self, t_block):
-		self.blocks[hash(t_block)] = t_block
-		if (self.chain_head == '*'):
-			self.chain_head = hash(t_block)
-			self.chain_head_others = hash(t_block)
-			self.mine_block()
-			return
-		
-		if (t_block.miner_id == self.miner_id) and (t_block.height > self.blocks[self.chain_head].height):
-			delta_prev = self.blocks[self.chain_head].height - self.blocks[self.chain_head_others].height
-			self.chain_head = hash(t_block)
-			self.privateBranchLen += 1
-			if (delta_prev == 0) and (self.privateBranchLen == 2):
-				self.announce_block(self.chain_head)
-				self.privateBranchLen = 0
-			self.mine_block()
-		
-		if (t_block.miner_id != self.miner_id) and (t_block.height > self.blocks[self.chain_head_others].height):
-			delta_prev = self.blocks[self.chain_head].height - self.blocks[self.chain_head_others].height
-			self.chain_head_others = hash(t_block)
-			if delta_prev <= 0:
-				self.chain_head = hash(t_block)
-				self.privateBranchLen = 0
-			elif delta_prev == 1:
-				self.announce_block(self.chain_head)
-			elif delta_prev == 2:
-				self.announce_block(self.chain_head)
-				self.privateBranchLen = 0
-			else:
-				iter_hash = self.chain_head
-				# the temp is in case we get too far ahead (in case we have >51%)
-				temp = 0
-				if delta_prev >= 6: temp = 1
-				while self.blocks[iter_hash].height != t_block.height + temp:
-					iter_hash = self.blocks[iter_hash].prev
-				self.announce_block(iter_hash)
-			self.mine_block()
-			
+def selfish_miners_simulation(alpha,total_miners, num_selfish,latency, bandwidth, rand_honest_mine_hash = false)
+    class BadMiner(Miner):
+        chain_head_others = '*'
+        privateBranchLen = 0
+        
+        def add_block(self, t_block):
+            self.blocks[hash(t_block)] = t_block
+            if (self.chain_head == '*'):
+                self.chain_head = hash(t_block)
+                self.chain_head_others = hash(t_block)
+                self.mine_block()
+                return
+            
+            if (t_block.miner_id == self.miner_id) and (t_block.height > self.blocks[self.chain_head].height):
+                delta_prev = self.blocks[self.chain_head].height - self.blocks[self.chain_head_others].height
+                self.chain_head = hash(t_block)
+                self.privateBranchLen += 1
+                if (delta_prev == 0) and (self.privateBranchLen == 2):
+                    self.announce_block(self.chain_head)
+                    self.privateBranchLen = 0
+                self.mine_block()
+            
+            if (t_block.miner_id != self.miner_id) and (t_block.height > self.blocks[self.chain_head_others].height):
+                delta_prev = self.blocks[self.chain_head].height - self.blocks[self.chain_head_others].height
+                self.chain_head_others = hash(t_block)
+                if delta_prev <= 0:
+                    self.chain_head = hash(t_block)
+                    self.privateBranchLen = 0
+                elif delta_prev == 1:
+                    self.announce_block(self.chain_head)
+                elif delta_prev == 2:
+                    self.announce_block(self.chain_head)
+                    self.privateBranchLen = 0
+                else:
+                    iter_hash = self.chain_head
+                    # the temp is in case we get too far ahead (in case we have >51%)
+                    temp = 0
+                    if delta_prev >= 6: temp = 1
+                    while self.blocks[iter_hash].height != t_block.height + temp:
+                        iter_hash = self.blocks[iter_hash].prev
+                    self.announce_block(iter_hash)
+                self.mine_block()
+    
 
-t = 0.0
-event_q = []
+    t = 0.0
+    event_q = []
 
-# root block
-seed_block = Block(None, 0, t, -1, 0, 1)
-
-
-# set up some miners with random hashrate
-numminers = 6
-hashrates = numpy.random.exponential(1.0, numminers)
-
-# setup very strong miner
-attacker_strength = 0.30
-hashrates[numminers-1] = 0.0
-hashrates[numminers-1] = hashrates.sum() * (attacker_strength/(1.0 - attacker_strength))
-
-hashrates = hashrates/hashrates.sum()
-
-miners = []
-for i in range(numminers):
-	miners.append(Miner(i, hashrates[i] * 1.0/600.0, 200*1024, seed_block, event_q, t))
-
-# make the strong miner a bad miner
-miners[i] = BadMiner(i, hashrates[i] * 1.0/600.0, 200*1024, seed_block, event_q, t)
+    # root block
+    seed_block = Block(None, 0, t, -1, 0, 1)
 
 
+    # set up some miners with random hashrate
+    total_miners = 10
+    num_selfish = 0
+    num_honest = total_miners - num_selfish
+    hash_total_selfish = 0.4
 
-# add some random links to each miner
-
-for i in range(numminers):
-	for k in range(4):
-		j = numpy.random.randint(0, numminers)
-		if i != j:
-			latency = 0.020 + 0.200*numpy.random.random()
-			bandwidth = 10*1024 + 200*1024*numpy.random.random()
-
-			miners[i].add_link(j, latency, bandwidth)
-			miners[j].add_link(i, latency, bandwidth)
+    if rand_honest_mine_hash:
+        hashrates = numpy.random.exponential(1.0, num_honest)
+        hashrates = (hashrates/hashrates.sum()) * (1 - hash_total_selfish)
+    else:
+        hashrates = [i for i in range(num_honest)]
+        hashrates = (hashrates/hashrates.sum()) * (1 - hash_total_selfish)
 
 
-# simulate some days of block generation
-curday = 0
-maxdays = 5*7*24*60*60
-while t < maxdays:
-	t, t_event = heappop(event_q)
-	#print('%08.3f: %02d->%02d %s' % (t, t_event.orig, t_event.dest, t_event.action), t_event.payload)
-	miners[t_event.dest].receive_event(t, t_event)
-	
-	if t/(24*60*60) > curday:
-		print('day %03d' % curday)
-		curday = int(t/(24*60*60))+1
+    hashrates = numpy.append(hashrates, [hash_total_selfish/num_selfish for i in range(num_selfish)])
+    hashrates = [ 0.08324844,  0.08552132,  0.11136445,  0.20999066,  0.10177589,
+     0.00809923,  0.1       ,  0.1       ,  0.1       ,  0.1       ]
+
+
+    print('##############')
+    print(hashrates)
+    print('##############')
+
+    miners = []
+    for i in range(total_miners):
+        if i < num_honest:
+            miners.append(Miner(i, hashrates[i] * 1.0/600.0, 200*1024, 1024*200*numpy.random.random(), seed_block, event_q, t))
+        else:
+            miners.append(BadMiner(i, hashrates[i] * 1.0/600.0, 200*1024, 1024*200*numpy.random.random(), seed_block, event_q, t))
+
+
+    # make the strong miner a bad miner
+    print(i)
+
+
+
+
+    # add some random links to each miner
+
+    for i in range(total_miners):
+        for k in range(4):
+            j = numpy.random.randint(0, total_miners)
+            if i != j:
+                latency = 0.020 + 0.200*numpy.random.random()
+                bandwidth = 10*1024 + 200*1024*numpy.random.random()
+
+                miners[i].add_link(j, latency, bandwidth)
+                miners[j].add_link(i, latency, bandwidth)
+
+
+    # simulate some days of block generation
+    curday = 0
+    maxdays = 0.5*7*24*60*60
+    while t < maxdays:
+        t, t_event = heappop(event_q)
+        #print('%08.3f: %02d->%02d %s' % (t, t_event.orig, t_event.dest, t_event.action), t_event.payload)
+        miners[t_event.dest].receive_event(t, t_event)
+        
+        if t/(24*60*60) > curday:
+            print('day %03d' % curday)
+            curday = int(t/(24*60*60))+1
 
 
 
@@ -132,7 +150,7 @@ mine = miners[0]
 t_hash = mine.chain_head
 
 rewardsum = 0.0
-for i in range(numminers):
+for i in range(total_miners):
 	miners[i].reward = 0.0
 
 main_chain = dict()
@@ -160,10 +178,12 @@ pylab.figure()
 
 pylab.plot([0, numpy.max(hashrates)*1.05], [0, numpy.max(hashrates)*1.05], '-', color='0.4')
 
-for i in range(numminers):
+for i in range(total_miners):
 	#print('%2d: %0.3f -> %0.3f' % (i, hashrates[i], miners[i].reward/rewardsum))
-	pylab.plot(hashrates[i], miners[i].reward/rewardsum, 'k.')
-pylab.plot(hashrates[i], miners[i].reward/rewardsum, 'rx')
+    if i < num_honest:
+	    pylab.plot(hashrates[i], miners[i].reward/rewardsum, 'k.')
+    else:
+        pylab.plot(hashrates[i], miners[i].reward/rewardsum, 'rx')
 
 pylab.xlabel('hashrate')
 pylab.ylabel('reward')
@@ -172,7 +192,7 @@ pylab.ylabel('reward')
 
 pylab.figure()
 orphans = 0
-for i in range(numminers):
+for i in range(total_miners):
 	for t_hash in miners[i].blocks:
 		if t_hash not in main_chain:
 			orphans += 1
@@ -187,11 +207,24 @@ pylab.xlabel('hashrate')
 pylab.ylim([0, 100])
 
 print('Orphaned blocks: %d (%0.3f)' % (orphans, orphans/mine.blocks[mine.chain_head].height))
+print('##########MINER_BLOCKS############')
+print(sum([len(miners[i].blocks) for i in range(len(miners))]))
+print('##########MINER_BLOCKS############')
+print('##########mainchain############')
+print(len(main_chain))
+print('##########mainchain############')
 print('Average block height time: %0.3f min' % (mine.blocks[mine.chain_head].time/(60*mine.blocks[mine.chain_head].height)))
+#print(total_mined_blocks())
 
 
 
 
 pylab.draw()
 pylab.show()
+
+
+
+
+
+
 

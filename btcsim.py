@@ -23,6 +23,8 @@ import numpy
 
 from heapq import *
 
+total_num_mined_blocks = 0
+
 
 
 class Event:
@@ -83,11 +85,14 @@ class Miner:
 		
 
 	def mine_block(self):
+        
 		t_next = self.t + numpy.random.exponential(1/self.hashrate, 1)[0]
 		t_size = self.blocksize #1024*200*numpy.random.random()
 		t_block = Block(self.chain_head, self.blocks[self.chain_head].height + 1, t_next, self.miner_id, t_size, 1)
 		self.send_event(t_next, self.miner_id, 'block', t_block)
-
+    #total_num_mined_blocks = total_num_mined_blocks + 1
+        
+        
 	def verify_block(self, t_block):
 		if (t_block.miner_id == self.miner_id) and (t_block.prev != self.chain_head):
 			#print('%02d: block %s is to be ignored (old mining block event from before chain_head changed).' % (self.miner_id, hash(t_block)))
@@ -183,4 +188,5 @@ class Miner:
 				t_arrival = t_link.occupy(self.t, t_block.size)
 				self.send_event(t_arrival, t_link.dest, 'block', t_block)
 
+ 
 
