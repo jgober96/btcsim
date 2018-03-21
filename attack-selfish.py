@@ -25,7 +25,7 @@ from heapq import *
 
 from btcsim import *
 
-def selfish_miners_simulation(alpha,total_miners, num_selfish,latency, bandwidth, rand_honest_mine_hash = false)
+def selfish_miners_simulation(alpha,total_miners, num_selfish,latency, bandwidth, rand_honest_mine_hash = False):
     class BadMiner(Miner):
         chain_head_others = '*'
         privateBranchLen = 0
@@ -77,10 +77,10 @@ def selfish_miners_simulation(alpha,total_miners, num_selfish,latency, bandwidth
 
 
     # set up some miners with random hashrate
-    total_miners = 10
-    num_selfish = 0
+    total_miners = total_miners
+    num_selfish = num_selfish
     num_honest = total_miners - num_selfish
-    hash_total_selfish = 0.4
+    hash_total_selfish = alpha
 
     if rand_honest_mine_hash:
         hashrates = numpy.random.exponential(1.0, num_honest)
@@ -119,8 +119,8 @@ def selfish_miners_simulation(alpha,total_miners, num_selfish,latency, bandwidth
         for k in range(4):
             j = numpy.random.randint(0, total_miners)
             if i != j:
-                latency = 0.020 + 0.200*numpy.random.random()
-                bandwidth = 10*1024 + 200*1024*numpy.random.random()
+                latency = latency[0] + latency[1]*numpy.random.random()
+                bandwidth = bandwidth[0] + bandwidth[1]*numpy.random.random()
 
                 miners[i].add_link(j, latency, bandwidth)
                 miners[j].add_link(i, latency, bandwidth)
@@ -138,93 +138,97 @@ def selfish_miners_simulation(alpha,total_miners, num_selfish,latency, bandwidth
             print('day %03d' % curday)
             curday = int(t/(24*60*60))+1
 
+    return(seed_block, hash, miners,t_block,mine,t_hash, main_chain, hashrates, orphans)
 
 
 # data analysis
 
-pylab.figure()
-
-cols = ['r-', 'g-', 'b-', 'y-']
-
-mine = miners[0]
-t_hash = mine.chain_head
-
-rewardsum = 0.0
-for i in range(total_miners):
-	miners[i].reward = 0.0
-
-main_chain = dict()
-main_chain[hash(seed_block)] = 1
-
-while t_hash != None:
-	t_block = mine.blocks[t_hash]
-	
-	if t_hash not in main_chain:
-		main_chain[t_hash] = 1
-	
-	miners[t_block.miner_id].reward += 1
-	rewardsum += 1
-	
-	if t_block.prev != None:
-		pylab.plot([mine.blocks[t_block.prev].time, t_block.time], [mine.blocks[t_block.prev].height, t_block.height], cols[t_block.miner_id%4])
-	
-	t_hash = t_block.prev
-
-pylab.xlabel('time in s')
-pylab.ylabel('block height')
-pylab.draw()
-
-pylab.figure()
-
-pylab.plot([0, numpy.max(hashrates)*1.05], [0, numpy.max(hashrates)*1.05], '-', color='0.4')
-
-for i in range(total_miners):
-	#print('%2d: %0.3f -> %0.3f' % (i, hashrates[i], miners[i].reward/rewardsum))
-    if i < num_honest:
-	    pylab.plot(hashrates[i], miners[i].reward/rewardsum, 'k.')
-    else:
-        pylab.plot(hashrates[i], miners[i].reward/rewardsum, 'rx')
-
-pylab.xlabel('hashrate')
-pylab.ylabel('reward')
-
-
-
-pylab.figure()
-orphans = 0
-for i in range(total_miners):
-	for t_hash in miners[i].blocks:
-		if t_hash not in main_chain:
-			orphans += 1
-		# draws the chains
-		if miners[i].blocks[t_hash].height > 1:
-			cur_b = miners[i].blocks[t_hash]
-			pre_b = miners[i].blocks[cur_b.prev]
-			pylab.plot([hashrates[pre_b.miner_id], hashrates[cur_b.miner_id]], [pre_b.height, cur_b.height], 'k-')
-
-pylab.ylabel('block height')
-pylab.xlabel('hashrate')
-pylab.ylim([0, 100])
-
-print('Orphaned blocks: %d (%0.3f)' % (orphans, orphans/mine.blocks[mine.chain_head].height))
-print('##########MINER_BLOCKS############')
-print(sum([len(miners[i].blocks) for i in range(len(miners))]))
-print('##########MINER_BLOCKS############')
-print('##########mainchain############')
-print(len(main_chain))
-print('##########mainchain############')
-print('Average block height time: %0.3f min' % (mine.blocks[mine.chain_head].time/(60*mine.blocks[mine.chain_head].height)))
-#print(total_mined_blocks())
-
-
-
-
-pylab.draw()
-pylab.show()
-
-
+#pylab.figure()
+#
+#cols = ['r-', 'g-', 'b-', 'y-']
+#
+#mine = miners[0]
+#t_hash = mine.chain_head
+#
+#rewardsum = 0.0
+#for i in range(total_miners):
+#    miners[i].reward = 0.0
+#
+#main_chain = dict()
+#main_chain[hash(seed_block)] = 1
+#
+#while t_hash != None:
+#    t_block = mine.blocks[t_hash]
+#
+#    if t_hash not in main_chain:
+#        main_chain[t_hash] = 1
+#
+#    miners[t_block.miner_id].reward += 1
+#    rewardsum += 1
+#
+#    if t_block.prev != None:
+#        pylab.plot([mine.blocks[t_block.prev].time, t_block.time], [mine.blocks[t_block.prev].height, t_block.height], cols[t_block.miner_id%4])
+#
+#    t_hash = t_block.prev
+#
+#pylab.xlabel('time in s')
+#pylab.ylabel('block height')
+#pylab.draw()
+#
+#pylab.figure()
+#
+#pylab.plot([0, numpy.max(hashrates)*1.05], [0, numpy.max(hashrates)*1.05], '-', color='0.4')
+#
+#for i in range(total_miners):
+#    #print('%2d: %0.3f -> %0.3f' % (i, hashrates[i], miners[i].reward/rewardsum))
+#    if i < num_honest:
+#        pylab.plot(hashrates[i], miners[i].reward/rewardsum, 'k.')
+#    else:
+#        pylab.plot(hashrates[i], miners[i].reward/rewardsum, 'rx')
+#
+#pylab.xlabel('hashrate')
+#pylab.ylabel('reward')
+#
+#
+#
+#pylab.figure()
+#orphans = 0
+#for i in range(total_miners):
+#    for t_hash in miners[i].blocks:
+#        if t_hash not in main_chain:
+#            orphans += 1
+#        # draws the chains
+#        if miners[i].blocks[t_hash].height > 1:
+#            cur_b = miners[i].blocks[t_hash]
+#            pre_b = miners[i].blocks[cur_b.prev]
+#            pylab.plot([hashrates[pre_b.miner_id], hashrates[cur_b.miner_id]], [pre_b.height, cur_b.height], 'k-')
+#
+#pylab.ylabel('block height')
+#pylab.xlabel('hashrate')
+#pylab.ylim([0, 100])
+#
+#print('Orphaned blocks: %d (%0.3f)' % (orphans, orphans/mine.blocks[mine.chain_head].height))
+#print('##########MINER_BLOCKS############')
+#print(sum([len(miners[i].blocks) for i in range(len(miners))]))
+#print('##########MINER_BLOCKS############')
+#print('##########mainchain############')
+#print(len(main_chain))
+#print('##########mainchain############')
+#print('Average block height time: %0.3f min' % (mine.blocks[mine.chain_head].time/(60*mine.blocks[mine.chain_head].height)))
+##print(total_mined_blocks())
+#
+#
+#
+#
+#pylab.draw()
+#pylab.show()
 
 
 
+
+
+#
+latency = [0.020,0.2]
+bandwidth = [10*1024,200*1024]
 
 
