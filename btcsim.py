@@ -188,5 +188,5 @@ class Miner:
 				t_arrival = t_link.occupy(self.t, t_block.size)
 				self.send_event(t_arrival, t_link.dest, 'block', t_block)
 
- 
+
 

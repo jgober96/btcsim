@@ -20,12 +20,15 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
 import os
 import sys
 import numpy
+import pandas as pd
+from pandas import DataFrame, Series
 import pylab
+import xlsxwriter
 from heapq import *
 
 from btcsim import *
 
-def selfish_miners_simulation(alpha,total_miners, num_selfish,latency, bandwidth, rand_honest_mine_hash = False):
+def selfish_miners_simulation(alpha,total_miners, num_selfish,latency = [0.001,0.002], bandwidth = [10*1024,200*1024], rand_honest_mine_hash = False):
     class BadMiner(Miner):
         chain_head_others = '*'
         privateBranchLen = 0
@@ -86,13 +89,13 @@ def selfish_miners_simulation(alpha,total_miners, num_selfish,latency, bandwidth
         hashrates = numpy.random.exponential(1.0, num_honest)
         hashrates = (hashrates/hashrates.sum()) * (1 - hash_total_selfish)
     else:
-        hashrates = [i for i in range(num_honest)]
+        hashrates = numpy.asarray([i for i in range(int(num_honest))])
         hashrates = (hashrates/hashrates.sum()) * (1 - hash_total_selfish)
 
 
     hashrates = numpy.append(hashrates, [hash_total_selfish/num_selfish for i in range(num_selfish)])
-    hashrates = [ 0.08324844,  0.08552132,  0.11136445,  0.20999066,  0.10177589,
-     0.00809923,  0.1       ,  0.1       ,  0.1       ,  0.1       ]
+#    hashrates = [ 0.08324844,  0.08552132,  0.11136445,  0.20999066,  0.10177589,
+#     0.00809923,  0.1       ,  0.1       ,  0.1       ,  0.1       ]
 
 
     print('##############')
@@ -119,16 +122,16 @@ def selfish_miners_simulation(alpha,total_miners, num_selfish,latency, bandwidth
         for k in range(4):
             j = numpy.random.randint(0, total_miners)
             if i != j:
-                latency = latency[0] + latency[1]*numpy.random.random()
-                bandwidth = bandwidth[0] + bandwidth[1]*numpy.random.random()
+                latency_val = latency[0] + latency[1]*numpy.random.random()
+                bandwidth_val = bandwidth[0] + bandwidth[1]*numpy.random.random()
 
-                miners[i].add_link(j, latency, bandwidth)
-                miners[j].add_link(i, latency, bandwidth)
+                miners[i].add_link(j, latency_val, bandwidth_val)
+                miners[j].add_link(i, latency_val, bandwidth_val)
 
 
     # simulate some days of block generation
     curday = 0
-    maxdays = 0.5*7*24*60*60
+    maxdays = 0.75*7*24*60*60
     while t < maxdays:
         t, t_event = heappop(event_q)
         #print('%08.3f: %02d->%02d %s' % (t, t_event.orig, t_event.dest, t_event.action), t_event.payload)
@@ -138,7 +141,49 @@ def selfish_miners_simulation(alpha,total_miners, num_selfish,latency, bandwidth
             print('day %03d' % curday)
             curday = int(t/(24*60*60))+1
 
-    return(seed_block, hash, miners,t_block,mine,t_hash, main_chain, hashrates, orphans)
+
+
+
+    ##
+    mine = miners[0]
+    t_hash = mine.chain_head
+
+    rewardsum = 0.0
+    for i in range(total_miners):
+        miners[i].reward = 0.0
+
+    main_chain = dict()
+    main_chain[hash(seed_block)] = 1
+
+    while t_hash != None:
+        t_block = mine.blocks[t_hash]
+        
+        if t_hash not in main_chain:
+            main_chain[t_hash] = 1
+        
+        miners[t_block.miner_id].reward += 1
+        rewardsum += 1
+        
+        if False:
+            pylab.plot([mine.blocks[t_block.prev].time, t_block.time], [mine.blocks[t_block.prev].height, t_block.height], cols[t_block.miner_id%4])
+
+        t_hash = t_block.prev
+
+
+
+
+    orphans = 0
+    for i in range(total_miners):
+        for t_hash in miners[i].blocks:
+            if t_hash not in main_chain:
+                orphans += 1
+            # draws the chains
+            if miners[i].blocks[t_hash].height > 1:
+                cur_b = miners[i].blocks[t_hash]
+                pre_b = miners[i].blocks[cur_b.prev]
+#                pylab.plot([hashrates[pre_b.miner_id], hashrates[cur_b.miner_id]], [pre_b.height, cur_b.height], 'k-')
+
+    return(seed_block, hash, miners, main_chain, hashrates, orphans, rewardsum)
 
 
 # data analysis
@@ -202,7 +247,7 @@ def selfish_miners_simulation(alpha,total_miners, num_selfish,latency, bandwidth
 #            cur_b = miners[i].blocks[t_hash]
 #            pre_b = miners[i].blocks[cur_b.prev]
 #            pylab.plot([hashrates[pre_b.miner_id], hashrates[cur_b.miner_id]], [pre_b.height, cur_b.height], 'k-')
-#
+
 #pylab.ylabel('block height')
 #pylab.xlabel('hashrate')
 #pylab.ylim([0, 100])
@@ -224,11 +269,66 @@ def selfish_miners_simulation(alpha,total_miners, num_selfish,latency, bandwidth
 #pylab.show()
 
 
+# gathering data
+alphas = [0.5,0.4,0.3,0.2,0.1]
+nums_selfish = [1, 2, 3, 4 ,5, 10, 20, 50, 100]
+latency = [0.020,0.2]
+bandwidth = [10*1024,200*1024]
 
+
+rewards_df = DataFrame()
+orphans_df = DataFrame()
+honest_rewards_total_df = DataFrame()
+selfish_rewards_total_df = DataFrame()
+selfish_rewards_sd_df = DataFrame()
+orphan_rate_df = DataFrame()
+
+for alpha in alphas:
+    for num_selfish in nums_selfish:
+        total_miners = int(numpy.sqrt(num_selfish) * 15)
+#        print('%%%%%%%%')
+#        print(total_miners)
+#        print('%%%%%%%%')
+        seed_block, hash, miners, main_chain, hashrates, orphans, rewardsum = selfish_miners_simulation(alpha,total_miners, num_selfish)
+        rewards = []
+        selfish_rewards = []
+        honest_rewards = []
+        rewards = [miners[i].reward/rewardsum for i in range(total_miners)]
+        selfish_rewards = [miners[i].reward/rewardsum for i in range(num_selfish, total_miners)]
+        honest_rewards = [miners[i].reward/rewardsum for i in range(num_selfish)]
+        total_blocks_mined = 0
+        for i in range(len(miners)):
+            total_blocks_mined += len(miners[i].blocks)
+
+        # If you change any of the alpha, num_selfish etc arrays, be sure to change the 150 here and any other hard coded values
+        nas = ['NA' for i in range(150 - len(rewards))]
+        rewards_full = rewards + nas
+        print('%%%%%%%%')
+        print(rewards_full)
+        print('%%%%%%%%')
+        rewards_df[str(alpha) +  '_' + str(num_selfish)] = pd.Series(rewards_full)
+        orphans_df[str(alpha) +  '_' + str(num_selfish)] = pd.Series(orphans)
+        selfish_rewards_total_df[str(alpha) +  '_' + str(num_selfish)]  = pd.Series(sum(selfish_rewards))
+        honest_rewards_total_df[str(alpha) +  '_' + str(num_selfish)]  = pd.Series(sum(honest_rewards))
+        selfish_rewards_sd_df[str(alpha) +  '_' + str(num_selfish)]  = pd.Series(numpy.std(selfish_rewards))
+        orphan_rate_df[str(alpha) +  '_' + str(num_selfish)]  = pd.Series(orphans/total_blocks_mined)
+
+
+writer = pd.ExcelWriter('thesis_simulattion_results_test2_latencylow.xlsx', engine='xlsxwriter')
+# rewards_df.to_csv('test1.csv')
+rewards_df.to_excel(writer, sheet_name = 'all rewards')
+orphans_df.to_excel(writer, sheet_name = 'orphans')
+honest_rewards_total_df.to_excel(writer, sheet_name = 'honest')
+selfish_rewards_total_df.to_excel(writer, sheet_name = 'selfish')
+selfish_rewards_sd_df.to_excel(writer, sheet_name = 'std')
+orphan_rate_df.to_excel(writer, sheet_name = 'orphan rate')
+writer.save()
+
+print(rewards_df)
+                
 
 
 #
-latency = [0.020,0.2]
-bandwidth = [10*1024,200*1024]
+
 
 
