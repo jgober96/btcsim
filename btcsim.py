@@ -25,7 +25,8 @@ from heapq import *
 
 total_num_mined_blocks = 0
 
-
+#def mined_block_count(x):
+#    return total_num_mined_blocks
 
 class Event:
 	def __init__(self, dest, orig, action, payload):
@@ -84,13 +85,15 @@ class Miner:
 		self.add_block(seed_block)
 		
 
+
 	def mine_block(self):
-        
-		t_next = self.t + numpy.random.exponential(1/self.hashrate, 1)[0]
-		t_size = self.blocksize #1024*200*numpy.random.random()
-		t_block = Block(self.chain_head, self.blocks[self.chain_head].height + 1, t_next, self.miner_id, t_size, 1)
-		self.send_event(t_next, self.miner_id, 'block', t_block)
-    #total_num_mined_blocks = total_num_mined_blocks + 1
+            import btcsim
+            t_next = self.t + numpy.random.exponential(1/self.hashrate, 1)[0]
+            
+            t_size = self.blocksize #1024*200*numpy.random.random()
+            t_block = Block(self.chain_head, self.blocks[self.chain_head].height + 1, t_next, self.miner_id, t_size, 1)
+            self.send_event(t_next, self.miner_id, 'block', t_block)
+            btcsim.total_num_mined_blocks += 1
         
         
 	def verify_block(self, t_block):
@@ -187,6 +190,8 @@ class Miner:
 				t_block = self.blocks[t_hash]
 				t_arrival = t_link.occupy(self.t, t_block.size)
 				self.send_event(t_arrival, t_link.dest, 'block', t_block)
+
+
 
 
 

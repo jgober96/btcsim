@@ -28,7 +28,7 @@ from heapq import *
 
 from btcsim import *
 
-def selfish_miners_simulation(alpha,total_miners, num_selfish,latency = [0.001,0.002], bandwidth = [10*1024,200*1024], rand_honest_mine_hash = False):
+def selfish_miners_simulation(alpha,total_miners, num_selfish,latency = [0.02,0.2], bandwidth = [10*1024,200*1024], rand_honest_mine_hash = False):
     class BadMiner(Miner):
         chain_head_others = '*'
         privateBranchLen = 0
@@ -98,9 +98,9 @@ def selfish_miners_simulation(alpha,total_miners, num_selfish,latency = [0.001,0
 #     0.00809923,  0.1       ,  0.1       ,  0.1       ,  0.1       ]
 
 
-    print('##############')
-    print(hashrates)
-    print('##############')
+#    print('##############')
+#    print(hashrates)
+#    print('##############')
 
     miners = []
     for i in range(total_miners):
@@ -111,7 +111,7 @@ def selfish_miners_simulation(alpha,total_miners, num_selfish,latency = [0.001,0
 
 
     # make the strong miner a bad miner
-    print(i)
+# print(i)
 
 
 
@@ -131,7 +131,7 @@ def selfish_miners_simulation(alpha,total_miners, num_selfish,latency = [0.001,0
 
     # simulate some days of block generation
     curday = 0
-    maxdays = 0.75*7*24*60*60
+    maxdays = 3*7*24*60*60
     while t < maxdays:
         t, t_event = heappop(event_q)
         #print('%08.3f: %02d->%02d %s' % (t, t_event.orig, t_event.dest, t_event.action), t_event.payload)
@@ -171,19 +171,22 @@ def selfish_miners_simulation(alpha,total_miners, num_selfish,latency = [0.001,0
 
 
 
-
+    orphans_set = set()
     orphans = 0
     for i in range(total_miners):
-        for t_hash in miners[i].blocks:
+        for t_hash, block in miners[i].blocks.items():
             if t_hash not in main_chain:
                 orphans += 1
+                orphans_set.add((t_hash, block.miner_id))
             # draws the chains
             if miners[i].blocks[t_hash].height > 1:
                 cur_b = miners[i].blocks[t_hash]
                 pre_b = miners[i].blocks[cur_b.prev]
 #                pylab.plot([hashrates[pre_b.miner_id], hashrates[cur_b.miner_id]], [pre_b.height, cur_b.height], 'k-')
+    orphans = len(orphans_set)
 
     return(seed_block, hash, miners, main_chain, hashrates, orphans, rewardsum)
+
 
 
 # data analysis
@@ -269,53 +272,69 @@ def selfish_miners_simulation(alpha,total_miners, num_selfish,latency = [0.001,0
 #pylab.show()
 
 
-# gathering data
-alphas = [0.5,0.4,0.3,0.2,0.1]
-nums_selfish = [1, 2, 3, 4 ,5, 10, 20, 50, 100]
+# setting parameter lists
+alphas = [0.5,0.45,0.4,0.35,0.3,0.25,0.2,0.15,0.1]
+nums_selfish = [1, 2, 3, 4 ,5, 10, 25, 50, 75, 100]
 latency = [0.020,0.2]
 bandwidth = [10*1024,200*1024]
 
+# Column labels are simply alpha and num_selfish values
+rows = alphas
+cols = nums_selfish
 
+# Instatiate dataframes with appropriate col/row labels
 rewards_df = DataFrame()
-orphans_df = DataFrame()
-honest_rewards_total_df = DataFrame()
-selfish_rewards_total_df = DataFrame()
-selfish_rewards_sd_df = DataFrame()
-orphan_rate_df = DataFrame()
+orphans_df = DataFrame(columns=cols, index=rows)
+honest_rewards_total_df = DataFrame(columns=cols, index=rows)
+selfish_rewards_total_df = DataFrame(columns=cols, index=rows)
+selfish_rewards_sd_df = DataFrame(columns=cols, index=rows)
+orphan_rate_df = DataFrame(columns=cols, index=rows)
+
 
 for alpha in alphas:
     for num_selfish in nums_selfish:
+        
+        # Set max number of total miners
         total_miners = int(numpy.sqrt(num_selfish) * 15)
-#        print('%%%%%%%%')
-#        print(total_miners)
-#        print('%%%%%%%%')
-        seed_block, hash, miners, main_chain, hashrates, orphans, rewardsum = selfish_miners_simulation(alpha,total_miners, num_selfish)
+        
+        # Invoke selfish miner function
+        seed_block, hash, miners, main_chain, hashrates, orphans, rewardsum  = selfish_miners_simulation(alpha,total_miners, num_selfish)
+        
+        # Gather necessary info
         rewards = []
         selfish_rewards = []
         honest_rewards = []
         rewards = [miners[i].reward/rewardsum for i in range(total_miners)]
-        selfish_rewards = [miners[i].reward/rewardsum for i in range(num_selfish, total_miners)]
-        honest_rewards = [miners[i].reward/rewardsum for i in range(num_selfish)]
-        total_blocks_mined = 0
+#        selfish_rewards = [rewards[i] for i in range(num_selfish, total_miners)]
+#        honest_rewards = [rewards[i] for i in range(num_selfish)]
+        total_blocks_set = set()
+        print (sum(selfish_rewards), sum(honest_rewards))
+        
+        # Get total number of mined blocks
         for i in range(len(miners)):
-            total_blocks_mined += len(miners[i].blocks)
+            for key, val in miners[i].blocks.items():
+                total_blocks_set.add((val.miner_id, val.height))
+    
+        total_blocks_mined = len(total_blocks_set)
 
         # If you change any of the alpha, num_selfish etc arrays, be sure to change the 150 here and any other hard coded values
         nas = ['NA' for i in range(150 - len(rewards))]
         rewards_full = rewards + nas
-        print('%%%%%%%%')
-        print(rewards_full)
-        print('%%%%%%%%')
+        
+        # Add to dfs accordingly
         rewards_df[str(alpha) +  '_' + str(num_selfish)] = pd.Series(rewards_full)
-        orphans_df[str(alpha) +  '_' + str(num_selfish)] = pd.Series(orphans)
-        selfish_rewards_total_df[str(alpha) +  '_' + str(num_selfish)]  = pd.Series(sum(selfish_rewards))
-        honest_rewards_total_df[str(alpha) +  '_' + str(num_selfish)]  = pd.Series(sum(honest_rewards))
-        selfish_rewards_sd_df[str(alpha) +  '_' + str(num_selfish)]  = pd.Series(numpy.std(selfish_rewards))
-        orphan_rate_df[str(alpha) +  '_' + str(num_selfish)]  = pd.Series(orphans/total_blocks_mined)
+        orphans_df.loc[alpha, num_selfish] = orphans
+        selfish_rewards_total_df.loc[alpha, num_selfish]  = sum(rewards[total_miners - num_selfish:total_miners])
+        honest_rewards_total_df.loc[alpha, num_selfish]  = sum(rewards[:total_miners - num_selfish])
+        selfish_rewards_sd_df.loc[alpha, num_selfish]  = numpy.std(rewards[total_miners - num_selfish:total_miners])
+        orphan_rate_df.loc[alpha, num_selfish]  = orphans/total_blocks_mined
+
+# Check
+        print(total_blocks_mined, orphans)
 
 
-writer = pd.ExcelWriter('thesis_simulattion_results_test2_latencylow.xlsx', engine='xlsxwriter')
-# rewards_df.to_csv('test1.csv')
+
+writer = pd.ExcelWriter('thesis_simulattion_results_F2_latencynorm.xlsx', engine='xlsxwriter')
 rewards_df.to_excel(writer, sheet_name = 'all rewards')
 orphans_df.to_excel(writer, sheet_name = 'orphans')
 honest_rewards_total_df.to_excel(writer, sheet_name = 'honest')
@@ -323,12 +342,3 @@ selfish_rewards_total_df.to_excel(writer, sheet_name = 'selfish')
 selfish_rewards_sd_df.to_excel(writer, sheet_name = 'std')
 orphan_rate_df.to_excel(writer, sheet_name = 'orphan rate')
 writer.save()
-
-print(rewards_df)
-                
-
-
-#
-
-
-
